@@ -18,7 +18,7 @@ const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
 // CORS
 app.use(
     cors({
-        origin: [CLIENT_URL, "http://localhost:3000"],
+        origin: "*",
         methods: ["GET", "POST"],
     })
 );
@@ -28,7 +28,7 @@ app.use(express.json());
 // Socket.IO
 const io = new Server(httpServer, {
     cors: {
-        origin: [CLIENT_URL, "http://localhost:3000"],
+        origin: "*",
         methods: ["GET", "POST"],
     },
     pingTimeout: 60000,
