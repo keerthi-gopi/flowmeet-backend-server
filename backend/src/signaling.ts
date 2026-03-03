@@ -15,9 +15,9 @@ interface JoinRoomPayload {
 
 interface SignalPayload {
     toUserId: string;
-    offer?: RTCSessionDescriptionInit;
-    answer?: RTCSessionDescriptionInit;
-    candidate?: RTCIceCandidateInit;
+    offer?: any;
+    answer?: any;
+    candidate?: any;
 }
 
 interface ChatMessagePayload {

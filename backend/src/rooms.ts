@@ -49,11 +49,11 @@ export function getParticipants(roomId: string): Map<string, Participant> | unde
 
 export function findUserBySocketId(
     socketId: string
-): { roomId: string; userId: string } | null {
+): { roomId: string; userId: string; name: string } | null {
     for (const [roomId, room] of rooms) {
         for (const [userId, participant] of room) {
             if (participant.socketId === socketId) {
-                return { roomId, userId };
+                return { roomId, userId, name: participant.name };
             }
         }
     }
