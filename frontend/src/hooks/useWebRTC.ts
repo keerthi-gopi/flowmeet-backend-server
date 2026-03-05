@@ -91,32 +91,49 @@ export function useWebRTC(
         // Handle incoming tracks
         pc.ontrack = (event) => {
             console.log(`[WebRTC] Received track from ${remoteUserId}: ${event.track.kind}, readyState=${event.track.readyState}`);
-            const [remoteStream] = event.streams;
-            if (remoteStream) {
+            // Use event.streams[0] if the browser grouped them, otherwise create a new one
+            const trackStream = event.streams[0];
+
+            setRemoteStreams((prev) => {
+                const next = new Map(prev);
+                const existing = next.get(remoteUserId);
+
+                let stream;
+                if (existing) {
+                    // Try to reuse existing stream to avoid recreating the video element
+                    stream = existing.stream;
+                    const hasTrack = stream.getTracks().find(t => t.id === event.track.id);
+                    if (!hasTrack) {
+                        console.log(`[WebRTC] Adding ${event.track.kind} track to existing stream for ${remoteUserId}`);
+                        stream.addTrack(event.track);
+                    }
+                } else if (trackStream) {
+                    stream = trackStream;
+                } else {
+                    stream = new MediaStream([event.track]);
+                }
+
+                next.set(remoteUserId, {
+                    stream,
+                    userId: remoteUserId,
+                    name: remoteName,
+                });
+                return next;
+            });
+
+            // Listen for track unmute (important for mobile where tracks may start muted)
+            event.track.onunmute = () => {
+                console.log(`[WebRTC] Track unmuted from ${remoteUserId}: ${event.track.kind}`);
+                // Force re-render by updating the stream reference
                 setRemoteStreams((prev) => {
                     const next = new Map(prev);
-                    next.set(remoteUserId, {
-                        stream: remoteStream,
-                        userId: remoteUserId,
-                        name: remoteName,
-                    });
+                    const existing = next.get(remoteUserId);
+                    if (existing) {
+                        next.set(remoteUserId, { ...existing });
+                    }
                     return next;
                 });
-
-                // Listen for track unmute (important for mobile where tracks may start muted)
-                event.track.onunmute = () => {
-                    console.log(`[WebRTC] Track unmuted from ${remoteUserId}: ${event.track.kind}`);
-                    // Force re-render by updating the stream reference
-                    setRemoteStreams((prev) => {
-                        const next = new Map(prev);
-                        const existing = next.get(remoteUserId);
-                        if (existing) {
-                            next.set(remoteUserId, { ...existing });
-                        }
-                        return next;
-                    });
-                };
-            }
+            };
         };
 
         // Send ICE candidates

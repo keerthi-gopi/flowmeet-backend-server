@@ -32,13 +32,13 @@ export default function VideoTile({
         }
 
         // Attempt to play (handles autoplay policy)
-        const tryPlay = () => {
-            const playPromise = video.play();
-            if (playPromise) {
-                playPromise.catch((err) => {
-                    // Autoplay was blocked — common on mobile
-                    console.warn("[VideoTile] Autoplay blocked:", err.message);
-                });
+        const tryPlay = async () => {
+            if (!video) return;
+            try {
+                await video.play();
+            } catch (err: any) {
+                // Autoplay was blocked — common on mobile
+                console.warn("[VideoTile] Autoplay blocked:", err.message);
             }
         };
 
@@ -105,6 +105,10 @@ export default function VideoTile({
                     autoPlay
                     playsInline
                     muted={isLocal}
+                    onLoadedMetadata={(e) => {
+                        console.log("[VideoTile] Metadata loaded, attempting play");
+                        (e.target as HTMLVideoElement).play().catch(console.warn);
+                    }}
                     className={`w-full h-full object-cover ${isLocal && !isScreenSharing ? "scale-x-[-1]" : ""} ${showAvatarOverlay && !isLocal ? "absolute inset-0 opacity-0 pointer-events-none" : ""
                         } ${showAvatarOverlay && isLocal ? "hidden" : ""}`}
                 />
