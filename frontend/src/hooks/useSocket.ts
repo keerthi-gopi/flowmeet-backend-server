@@ -18,7 +18,7 @@ export function useSocket(roomId: string, userId: string, name: string) {
             reconnectionAttempts: 15,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            timeout: 20000,
+            timeout: 60000,
         });
 
         socketRef.current = sock;

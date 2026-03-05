@@ -79,6 +79,13 @@ export default function RoomPage() {
         });
     }, [initStream, joinRoom]);
 
+    // Retry joining room when socket connects (handles Render cold start delay)
+    useEffect(() => {
+        if (isConnected && isJoined) {
+            joinRoom();
+        }
+    }, [isConnected, isJoined, joinRoom]);
+
     // Socket event listeners for chat and participant states
     useEffect(() => {
         if (!socket) return;
@@ -296,8 +303,8 @@ export default function RoomPage() {
         );
     }
 
-    // Loading screen
-    if (!isJoined || !isConnected) {
+    // Loading screen — only block on camera access, NOT socket connection
+    if (!isJoined) {
         return (
             <div
                 className="min-h-screen min-h-[100dvh] flex items-center justify-center"
@@ -313,7 +320,7 @@ export default function RoomPage() {
                         className="text-base sm:text-lg font-medium"
                         style={{ fontFamily: "var(--fm-font-display)" }}
                     >
-                        {!localStream ? "Requesting camera access..." : "Connecting to room..."}
+                        Requesting camera access...
                     </p>
                     <p
                         className="text-xs sm:text-sm mt-2 truncate max-w-[280px] mx-auto"
@@ -331,6 +338,22 @@ export default function RoomPage() {
             className="h-[100dvh] h-screen flex flex-col overflow-hidden"
             style={{ background: "var(--fm-bg-deep)" }}
         >
+            {/* Reconnecting banner — shows when socket is not connected */}
+            {!isConnected && (
+                <div
+                    className="flex items-center justify-center gap-2 px-3 py-2 flex-shrink-0"
+                    style={{
+                        background: "rgba(245, 158, 11, 0.15)",
+                        borderBottom: "1px solid rgba(245, 158, 11, 0.3)",
+                    }}
+                >
+                    <Loader2 size={14} className="animate-spin" style={{ color: "var(--fm-warning)" }} />
+                    <span className="text-xs sm:text-sm font-medium" style={{ color: "var(--fm-warning)" }}>
+                        Connecting to server... Please wait
+                    </span>
+                </div>
+            )}
+
             {/* Room header */}
             <div
                 className="flex items-center justify-between px-3 sm:px-4 py-2 flex-shrink-0"
