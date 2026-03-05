@@ -66,7 +66,10 @@ export default function ChatPanel({
             {/* Header */}
             <div
                 className="flex items-center justify-between px-4 py-3"
-                style={{ borderBottom: "1px solid var(--fm-border)" }}
+                style={{
+                    borderBottom: "1px solid var(--fm-border)",
+                    paddingTop: "calc(12px + var(--fm-safe-top))",
+                }}
             >
                 <h3
                     className="text-lg font-semibold"
@@ -84,7 +87,7 @@ export default function ChatPanel({
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ height: "calc(100% - 130px)" }}>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ height: "calc(100% - 130px - var(--fm-safe-bottom))" }}>
                 {messages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full opacity-50">
                         <p className="text-lg mb-1">No messages yet</p>
@@ -130,6 +133,7 @@ export default function ChatPanel({
                 style={{
                     background: "var(--fm-bg-dark)",
                     borderTop: "1px solid var(--fm-border)",
+                    paddingBottom: "calc(12px + var(--fm-safe-bottom))",
                 }}
             >
                 <input
@@ -145,6 +149,8 @@ export default function ChatPanel({
                         border: "1px solid var(--fm-border)",
                         color: "var(--fm-text-primary)",
                         fontFamily: "var(--fm-font-body)",
+                        /* Prevent iOS zoom on focus */
+                        fontSize: "16px",
                     }}
                     aria-label="Chat message input"
                 />

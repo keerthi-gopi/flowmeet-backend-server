@@ -28,30 +28,25 @@ export default function VideoGrid({
 }: VideoGridProps) {
     const totalParticipants = remoteParticipants.length + 1; // +1 for local
 
-    // Dynamic grid layout
+    // Dynamic grid classes — mobile-first approach
     const getGridClass = () => {
         if (totalParticipants === 1) return "grid-cols-1";
-        if (totalParticipants === 2) return "grid-cols-1 md:grid-cols-2";
+        if (totalParticipants === 2) return "grid-cols-1 sm:grid-cols-2";
         if (totalParticipants <= 4) return "grid-cols-2";
         if (totalParticipants <= 6) return "grid-cols-2 md:grid-cols-3";
-        return "grid-cols-3";
-    };
-
-    // Dynamic height for each tile
-    const getRowHeight = () => {
-        if (totalParticipants === 1) return "h-full";
-        if (totalParticipants <= 2) return "h-[calc(100vh-120px)] md:h-[calc(100vh-120px)]";
-        if (totalParticipants <= 4) return "h-[calc(50vh-60px)]";
-        return "h-[calc(33vh-50px)]";
+        return "grid-cols-2 md:grid-cols-3";
     };
 
     return (
         <div
-            className={`grid ${getGridClass()} gap-2 p-2 flex-1 auto-rows-fr`}
-            style={{ maxHeight: "calc(100vh - 90px)" }}
+            className={`grid ${getGridClass()} gap-1.5 sm:gap-2 p-1.5 sm:p-2 flex-1 auto-rows-fr overflow-hidden`}
+            style={{
+                /* Use dvh for iOS Safari dynamic viewport, fallback to vh */
+                height: "calc(100dvh - var(--fm-toolbar-height) - var(--fm-header-height))",
+            }}
         >
             {/* Local video tile */}
-            <div className={`${getRowHeight()}`}>
+            <div className="min-h-0">
                 <VideoTile
                     stream={localStream}
                     name={localName}
@@ -63,7 +58,7 @@ export default function VideoGrid({
 
             {/* Remote video tiles */}
             {remoteParticipants.map((participant) => (
-                <div key={participant.userId} className={`${getRowHeight()}`}>
+                <div key={participant.userId} className="min-h-0">
                     <VideoTile
                         stream={participant.stream}
                         name={participant.name}

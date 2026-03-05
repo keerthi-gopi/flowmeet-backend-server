@@ -7,8 +7,24 @@ const ICE_SERVERS: RTCConfiguration = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
+        // Free TURN relay servers — critical for connections across different networks
+        {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+        },
     ],
+    iceCandidatePoolSize: 10,
 };
 
 interface RemoteStream {
@@ -26,6 +42,12 @@ export function useWebRTC(
     const [remoteStreams, setRemoteStreams] = useState<Map<string, RemoteStream>>(new Map());
     const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
     const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+    // Track which side is the offerer (to avoid duplicate offers on negotiationneeded)
+    const isOfferer = useRef<Set<string>>(new Set());
+    // Flag to suppress negotiationneeded during initial setup
+    const makingOffer = useRef<Set<string>>(new Set());
+    // Track ICE disconnect timeouts
+    const iceTimeouts = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
     const localStreamRef = useRef(localStream);
     const socketRef = useRef(socket);
@@ -45,21 +67,30 @@ export function useWebRTC(
             existingPc.close();
         }
 
+        // Clear any existing ICE timeout
+        const existingTimeout = iceTimeouts.current.get(remoteUserId);
+        if (existingTimeout) {
+            clearTimeout(existingTimeout);
+            iceTimeouts.current.delete(remoteUserId);
+        }
+
         console.log(`[WebRTC] Creating new PC for ${remoteUserId}`);
         const pc = new RTCPeerConnection(ICE_SERVERS);
 
-        // Add local tracks
+        // Add local tracks if available
         const stream = localStreamRef.current;
         if (stream) {
-            console.log(`[WebRTC] Adding local tracks for ${remoteUserId}`);
+            console.log(`[WebRTC] Adding ${stream.getTracks().length} local tracks for ${remoteUserId}`);
             stream.getTracks().forEach((track) => {
                 pc.addTrack(track, stream);
             });
+        } else {
+            console.warn(`[WebRTC] No local stream available yet for ${remoteUserId} — tracks will be added later`);
         }
 
         // Handle incoming tracks
         pc.ontrack = (event) => {
-            console.log(`[WebRTC] Received track from ${remoteUserId}:`, event.track.kind);
+            console.log(`[WebRTC] Received track from ${remoteUserId}: ${event.track.kind}, readyState=${event.track.readyState}`);
             const [remoteStream] = event.streams;
             if (remoteStream) {
                 setRemoteStreams((prev) => {
@@ -71,6 +102,20 @@ export function useWebRTC(
                     });
                     return next;
                 });
+
+                // Listen for track unmute (important for mobile where tracks may start muted)
+                event.track.onunmute = () => {
+                    console.log(`[WebRTC] Track unmuted from ${remoteUserId}: ${event.track.kind}`);
+                    // Force re-render by updating the stream reference
+                    setRemoteStreams((prev) => {
+                        const next = new Map(prev);
+                        const existing = next.get(remoteUserId);
+                        if (existing) {
+                            next.set(remoteUserId, { ...existing });
+                        }
+                        return next;
+                    });
+                };
             }
         };
 
@@ -84,20 +129,89 @@ export function useWebRTC(
             }
         };
 
+        // ICE gathering state logging
+        pc.onicegatheringstatechange = () => {
+            console.log(`[WebRTC] ICE gathering state for ${remoteUserId}: ${pc.iceGatheringState}`);
+        };
+
+        // Connection state monitoring with smart reconnection
         pc.oniceconnectionstatechange = () => {
-            console.log(`[WebRTC] ICE state for ${remoteUserId}: ${pc.iceConnectionState}`);
-            if (pc.iceConnectionState === "failed") {
-                console.warn(`[WebRTC] ICE failed for ${remoteUserId}, attempting restart`);
-                pc.restartIce();
-            } else if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "closed") {
-                if (pc.iceConnectionState === "closed") {
+            console.log(`[WebRTC] ICE connection state for ${remoteUserId}: ${pc.iceConnectionState}`);
+
+            // Clear any pending timeout
+            const pendingTimeout = iceTimeouts.current.get(remoteUserId);
+            if (pendingTimeout) {
+                clearTimeout(pendingTimeout);
+                iceTimeouts.current.delete(remoteUserId);
+            }
+
+            switch (pc.iceConnectionState) {
+                case "connected":
+                case "completed":
+                    console.log(`[WebRTC] ✅ Connected to ${remoteUserId}`);
+                    break;
+
+                case "disconnected":
+                    // Wait 5 seconds — temporary disconnections are common on mobile
+                    console.warn(`[WebRTC] Disconnected from ${remoteUserId}, waiting 5s before restart...`);
+                    const timeout = setTimeout(() => {
+                        if (pc.iceConnectionState === "disconnected") {
+                            console.warn(`[WebRTC] Still disconnected from ${remoteUserId}, restarting ICE`);
+                            pc.restartIce();
+                        }
+                    }, 5000);
+                    iceTimeouts.current.set(remoteUserId, timeout);
+                    break;
+
+                case "failed":
+                    console.warn(`[WebRTC] ICE failed for ${remoteUserId}, attempting ICE restart`);
+                    pc.restartIce();
+                    break;
+
+                case "closed":
                     peerConnections.current.delete(remoteUserId);
                     setRemoteStreams((prev) => {
                         const next = new Map(prev);
                         next.delete(remoteUserId);
                         return next;
                     });
+                    break;
+            }
+        };
+
+        // Handle negotiationneeded — fires when tracks are added after initial SDP
+        pc.onnegotiationneeded = async () => {
+            // Only the offerer side should send renegotiation offers
+            if (!isOfferer.current.has(remoteUserId)) {
+                console.log(`[WebRTC] negotiationneeded for ${remoteUserId} but we're the answerer — skipping`);
+                return;
+            }
+
+            if (makingOffer.current.has(remoteUserId)) {
+                console.log(`[WebRTC] negotiationneeded for ${remoteUserId} but already making offer — skipping`);
+                return;
+            }
+
+            console.log(`[WebRTC] negotiationneeded for ${remoteUserId} — sending renegotiation offer`);
+            makingOffer.current.add(remoteUserId);
+
+            try {
+                const offer = await pc.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true,
+                });
+                await pc.setLocalDescription(offer);
+
+                if (socketRef.current) {
+                    socketRef.current.emit("webrtc-offer", {
+                        offer: pc.localDescription,
+                        toUserId: remoteUserId,
+                    });
                 }
+            } catch (err) {
+                console.error("[WebRTC] Error creating renegotiation offer:", err);
+            } finally {
+                makingOffer.current.delete(remoteUserId);
             }
         };
 
@@ -112,6 +226,9 @@ export function useWebRTC(
 
     const createOffer = useCallback(async (remoteUserId: string, remoteName: string) => {
         console.log(`[WebRTC] Creating offer for ${remoteUserId}`);
+        isOfferer.current.add(remoteUserId);
+        makingOffer.current.add(remoteUserId);
+
         const pc = createPeerConnection(remoteUserId, remoteName);
 
         try {
@@ -129,11 +246,16 @@ export function useWebRTC(
             }
         } catch (err) {
             console.error("[WebRTC] Error creating offer:", err);
+        } finally {
+            makingOffer.current.delete(remoteUserId);
         }
     }, [createPeerConnection]);
 
     const handleOffer = useCallback(async (fromUserId: string, offer: RTCSessionDescriptionInit, fromName: string = "Participant") => {
         console.log(`[WebRTC] Received offer from ${fromUserId}`);
+        // The person receiving the offer is the answerer
+        isOfferer.current.delete(fromUserId);
+
         const pc = createPeerConnection(fromUserId, fromName);
 
         try {
@@ -141,6 +263,7 @@ export function useWebRTC(
 
             // Apply pending candidates immediately after setting remote description
             const pending = pendingCandidates.current.get(fromUserId) || [];
+            console.log(`[WebRTC] Applying ${pending.length} pending candidates for ${fromUserId}`);
             for (const candidate of pending) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -155,7 +278,7 @@ export function useWebRTC(
 
             if (socketRef.current) {
                 socketRef.current.emit("webrtc-answer", {
-                    answer: pc.localDescription, // Send the local description which represents the answer
+                    answer: pc.localDescription,
                     toUserId: fromUserId,
                 });
             }
@@ -178,6 +301,7 @@ export function useWebRTC(
                 await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
                 const pending = pendingCandidates.current.get(fromUserId) || [];
+                console.log(`[WebRTC] Applying ${pending.length} pending candidates for ${fromUserId} after answer`);
                 for (const candidate of pending) {
                     try {
                         await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -220,6 +344,14 @@ export function useWebRTC(
             peerConnections.current.delete(remoteUserId);
         }
         pendingCandidates.current.delete(remoteUserId);
+        isOfferer.current.delete(remoteUserId);
+        makingOffer.current.delete(remoteUserId);
+
+        const timeout = iceTimeouts.current.get(remoteUserId);
+        if (timeout) {
+            clearTimeout(timeout);
+            iceTimeouts.current.delete(remoteUserId);
+        }
 
         setRemoteStreams((prev) => {
             const next = new Map(prev);
@@ -237,6 +369,35 @@ export function useWebRTC(
         });
     }, []);
 
+    // === KEY FIX: When localStream becomes available, add tracks to all existing peer connections ===
+    useEffect(() => {
+        if (!localStream) return;
+
+        console.log(`[WebRTC] localStream available with ${localStream.getTracks().length} tracks — adding to ${peerConnections.current.size} existing PCs`);
+
+        peerConnections.current.forEach((pc, peerId) => {
+            const senders = pc.getSenders();
+
+            localStream.getTracks().forEach((track) => {
+                // Check if this track kind is already being sent
+                const existingSender = senders.find(
+                    (s) => s.track?.kind === track.kind
+                );
+
+                if (existingSender) {
+                    // Replace existing track (e.g., if we had a placeholder)
+                    console.log(`[WebRTC] Replacing ${track.kind} track in PC for ${peerId}`);
+                    existingSender.replaceTrack(track);
+                } else {
+                    // Add new track — this will trigger negotiationneeded
+                    console.log(`[WebRTC] Adding ${track.kind} track to PC for ${peerId}`);
+                    pc.addTrack(track, localStream);
+                }
+            });
+        });
+    }, [localStream]);
+
+    // Socket event listeners
     useEffect(() => {
         if (!socket) return;
 
@@ -254,6 +415,8 @@ export function useWebRTC(
 
         const onUserJoined = ({ userId: newUserId, name }: { userId: string; name: string }) => {
             console.log(`[WebRTC] User joined: ${name} (${newUserId})`);
+            // The new user will send us an offer via existing-participants,
+            // so we just wait for the offer here.
         };
 
         const onOffer = ({ offer, fromUserId, fromName }: { offer: RTCSessionDescriptionInit; fromUserId: string; fromName?: string }) => {
@@ -276,6 +439,10 @@ export function useWebRTC(
             peerConnections.current.forEach((pc) => pc.close());
             peerConnections.current.clear();
             pendingCandidates.current.clear();
+            isOfferer.current.clear();
+            makingOffer.current.clear();
+            iceTimeouts.current.forEach((t) => clearTimeout(t));
+            iceTimeouts.current.clear();
             setRemoteStreams(new Map());
         };
 
@@ -299,10 +466,13 @@ export function useWebRTC(
         };
     }, [socket, createOffer, handleOffer, handleAnswer, handleIceCandidate, removePeer]);
 
+    // Cleanup on unmount
     useEffect(() => {
         return () => {
             peerConnections.current.forEach((pc) => pc.close());
             peerConnections.current.clear();
+            iceTimeouts.current.forEach((t) => clearTimeout(t));
+            iceTimeouts.current.clear();
         };
     }, []);
 

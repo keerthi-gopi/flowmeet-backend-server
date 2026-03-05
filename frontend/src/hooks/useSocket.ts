@@ -13,18 +13,34 @@ export function useSocket(roomId: string, userId: string, name: string) {
     useEffect(() => {
         const sock = io(SOCKET_URL, {
             transports: ["websocket", "polling"],
+            // Robust reconnection for mobile (network switches, sleep/wake)
+            reconnection: true,
+            reconnectionAttempts: 15,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000,
         });
 
         socketRef.current = sock;
 
         sock.on("connect", () => {
+            console.log(`[Socket] Connected: ${sock.id}`);
             setIsConnected(true);
-            // NOTE: We don't join-room here. The room page will join
-            // after localStream is ready, via the joinRoom callback.
         });
 
-        sock.on("disconnect", () => {
+        sock.on("disconnect", (reason) => {
+            console.warn(`[Socket] Disconnected: ${reason}`);
             setIsConnected(false);
+        });
+
+        sock.on("reconnect", (attemptNumber: number) => {
+            console.log(`[Socket] Reconnected after ${attemptNumber} attempts`);
+            // Re-join the room on reconnect so signaling continues
+            sock.emit("join-room", { roomId, userId, name });
+        });
+
+        sock.on("reconnect_error", (err: Error) => {
+            console.error(`[Socket] Reconnection error:`, err.message);
         });
 
         // Set socket as state so consumers re-render when it's available
@@ -35,7 +51,7 @@ export function useSocket(roomId: string, userId: string, name: string) {
             socketRef.current = null;
             setSocket(null);
         };
-    }, []); // Connect once — don't recreate on roomId/userId/name changes
+    }, []); // Connect once
 
     // Explicit join-room call that the page will invoke once localStream is ready
     const joinRoom = useCallback(() => {

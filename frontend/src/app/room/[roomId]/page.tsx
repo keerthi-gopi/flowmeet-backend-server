@@ -274,18 +274,18 @@ export default function RoomPage() {
     if (permissionError) {
         return (
             <div
-                className="min-h-screen flex items-center justify-center px-4"
+                className="min-h-screen min-h-[100dvh] flex items-center justify-center px-4"
                 style={{ background: "var(--fm-bg-deep)" }}
             >
-                <div className="glass-card p-8 max-w-md text-center">
-                    <AlertCircle size={48} className="mx-auto mb-4" style={{ color: "var(--fm-danger)" }} />
+                <div className="glass-card p-6 sm:p-8 max-w-md text-center">
+                    <AlertCircle size={40} className="mx-auto mb-4" style={{ color: "var(--fm-danger)" }} />
                     <h2
-                        className="text-xl font-bold mb-3"
+                        className="text-lg sm:text-xl font-bold mb-3"
                         style={{ fontFamily: "var(--fm-font-display)" }}
                     >
                         Permission Required
                     </h2>
-                    <p className="mb-6" style={{ color: "var(--fm-text-muted)" }}>
+                    <p className="mb-6 text-sm sm:text-base" style={{ color: "var(--fm-text-muted)" }}>
                         {permissionError}
                     </p>
                     <button onClick={() => router.push("/")} className="btn-secondary">
@@ -300,23 +300,23 @@ export default function RoomPage() {
     if (!isJoined || !isConnected) {
         return (
             <div
-                className="min-h-screen flex items-center justify-center"
+                className="min-h-screen min-h-[100dvh] flex items-center justify-center"
                 style={{ background: "var(--fm-bg-deep)" }}
             >
-                <div className="text-center">
+                <div className="text-center px-4">
                     <Loader2
-                        size={40}
+                        size={36}
                         className="animate-spin mx-auto mb-4"
                         style={{ color: "var(--fm-primary)" }}
                     />
                     <p
-                        className="text-lg font-medium"
+                        className="text-base sm:text-lg font-medium"
                         style={{ fontFamily: "var(--fm-font-display)" }}
                     >
                         {!localStream ? "Requesting camera access..." : "Connecting to room..."}
                     </p>
                     <p
-                        className="text-sm mt-2"
+                        className="text-xs sm:text-sm mt-2 truncate max-w-[280px] mx-auto"
                         style={{ color: "var(--fm-text-muted)", fontFamily: "var(--fm-font-mono)" }}
                     >
                         Room: {roomId}
@@ -328,23 +328,26 @@ export default function RoomPage() {
 
     return (
         <div
-            className="h-screen flex flex-col overflow-hidden"
+            className="h-[100dvh] h-screen flex flex-col overflow-hidden"
             style={{ background: "var(--fm-bg-deep)" }}
         >
             {/* Room header */}
             <div
-                className="flex items-center justify-between px-4 py-2 flex-shrink-0"
-                style={{ borderBottom: "1px solid var(--fm-border)" }}
+                className="flex items-center justify-between px-3 sm:px-4 py-2 flex-shrink-0"
+                style={{
+                    borderBottom: "1px solid var(--fm-border)",
+                    minHeight: "var(--fm-header-height)",
+                }}
             >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                     <h1
-                        className="text-sm font-bold gradient-text"
+                        className="text-sm font-bold gradient-text flex-shrink-0"
                         style={{ fontFamily: "var(--fm-font-display)" }}
                     >
                         FlowMeet
                     </h1>
                     <span
-                        className="px-2 py-0.5 rounded text-xs"
+                        className="px-2 py-0.5 rounded text-[10px] sm:text-xs truncate max-w-[120px] sm:max-w-[200px]"
                         style={{
                             background: "var(--fm-bg-surface)",
                             color: "var(--fm-text-muted)",
@@ -354,12 +357,12 @@ export default function RoomPage() {
                         {roomId}
                     </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
                     <span
-                        className="w-2 h-2 rounded-full"
+                        className="w-2 h-2 rounded-full flex-shrink-0"
                         style={{ background: isConnected ? "var(--fm-success)" : "var(--fm-danger)" }}
                     />
-                    <span className="text-xs" style={{ color: "var(--fm-text-muted)" }}>
+                    <span className="text-[10px] sm:text-xs hidden sm:inline" style={{ color: "var(--fm-text-muted)" }}>
                         {isConnected ? "Connected" : "Reconnecting..."}
                     </span>
                 </div>

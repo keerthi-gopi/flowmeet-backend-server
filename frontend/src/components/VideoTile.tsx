@@ -32,26 +32,50 @@ export default function VideoTile({
         }
 
         // Attempt to play (handles autoplay policy)
-        const playPromise = video.play();
-        if (playPromise) {
-            playPromise.catch((err) => {
-                // Autoplay was blocked — this is expected for unmuted remote video
-                console.warn("[VideoTile] Autoplay blocked:", err.message);
-            });
-        }
+        const tryPlay = () => {
+            const playPromise = video.play();
+            if (playPromise) {
+                playPromise.catch((err) => {
+                    // Autoplay was blocked — common on mobile
+                    console.warn("[VideoTile] Autoplay blocked:", err.message);
+                });
+            }
+        };
+
+        tryPlay();
 
         // Re-play when new tracks are added to the stream
         const handleTrackAdded = () => {
-            video.play().catch(() => { });
+            tryPlay();
         };
+
+        // Listen for track changes (important for renegotiation)
+        const handleTrackRemoved = () => {
+            // Stream still exists, just a track was removed
+            console.log("[VideoTile] Track removed from stream");
+        };
+
         stream.addEventListener("addtrack", handleTrackAdded);
+        stream.addEventListener("removetrack", handleTrackRemoved);
 
         return () => {
             stream.removeEventListener("addtrack", handleTrackAdded);
+            stream.removeEventListener("removetrack", handleTrackRemoved);
         };
     }, [stream]);
 
-    // Handle click to resume playback (autoplay policy workaround)
+    // Also re-trigger play when the stream identity changes (for renegotiation)
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video || !stream) return;
+
+        // If the video is paused, try to play it
+        if (video.paused) {
+            video.play().catch(() => { });
+        }
+    });
+
+    // Handle click to resume playback (autoplay policy workaround on mobile)
     const handleClick = useCallback(() => {
         const video = videoRef.current;
         if (video && video.paused && stream) {
@@ -67,15 +91,11 @@ export default function VideoTile({
         .toUpperCase()
         .slice(0, 2);
 
-    // For remote streams: ALWAYS render the <video> element so audio plays,
-    // even when camera is off — just hide it visually.
-    // For local streams: we only render local video if camera is ON or if doing screen sharing.
-    const showVideoElement = stream && (!isLocal || !isCameraOff || isScreenSharing);
     const showAvatarOverlay = isCameraOff && !isScreenSharing;
 
     return (
         <div
-            className="video-tile w-full h-full min-h-[180px] relative group"
+            className="video-tile w-full h-full min-h-[120px] sm:min-h-[180px] relative group"
             onClick={handleClick}
         >
             {/* Video element — always rendered for remote to ensure audio plays */}
@@ -84,7 +104,7 @@ export default function VideoTile({
                     ref={videoRef}
                     autoPlay
                     playsInline
-                    muted={isLocal} // Only mute local to prevent echo
+                    muted={isLocal}
                     className={`w-full h-full object-cover ${isLocal && !isScreenSharing ? "scale-x-[-1]" : ""} ${showAvatarOverlay && !isLocal ? "absolute inset-0 opacity-0 pointer-events-none" : ""
                         } ${showAvatarOverlay && isLocal ? "hidden" : ""}`}
                 />
@@ -97,7 +117,7 @@ export default function VideoTile({
                     style={{ background: "var(--fm-bg-surface)" }}
                 >
                     <div
-                        className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold"
+                        className="w-14 h-14 sm:w-20 sm:h-20 rounded-full flex items-center justify-center text-lg sm:text-2xl font-bold"
                         style={{
                             background: "linear-gradient(135deg, var(--fm-primary), var(--fm-accent))",
                             fontFamily: "var(--fm-font-display)",
@@ -109,16 +129,16 @@ export default function VideoTile({
             )}
 
             {/* Bottom overlay — name + indicators */}
-            <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent z-20">
-                <div className="flex items-center gap-2">
+            <div className="absolute bottom-0 left-0 right-0 p-2 sm:p-3 bg-gradient-to-t from-black/70 to-transparent z-20">
+                <div className="flex items-center gap-1.5 sm:gap-2">
                     {/* Mute indicator */}
                     {isMuted && (
                         <span
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-xs"
+                            className="w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-xs flex-shrink-0"
                             style={{ background: "var(--fm-danger)" }}
                             title="Muted"
                         >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
                                 <line x1="1" y1="1" x2="23" y2="23" />
                                 <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
                                 <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .76-.13 1.49-.36 2.18" />
@@ -131,7 +151,7 @@ export default function VideoTile({
                     {/* Screen sharing indicator */}
                     {isScreenSharing && (
                         <span
-                            className="px-2 py-0.5 rounded text-xs font-medium"
+                            className="px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium flex-shrink-0"
                             style={{ background: "var(--fm-success)", color: "#000" }}
                         >
                             Sharing
@@ -140,7 +160,7 @@ export default function VideoTile({
 
                     {/* Name */}
                     <span
-                        className="text-sm font-medium truncate"
+                        className="text-xs sm:text-sm font-medium truncate"
                         style={{ fontFamily: "var(--fm-font-body)", color: "var(--fm-text-primary)" }}
                     >
                         {isLocal ? `${name} (You)` : name}
