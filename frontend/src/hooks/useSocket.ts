@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000";
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL ||
+    (process.env.NODE_ENV === "production"
+        ? "https://flowmeet-backend-server.onrender.com"
+        : "http://localhost:4000");
 
 export function useSocket(roomId: string, userId: string, name: string) {
     const [socket, setSocket] = useState<Socket | null>(null);
